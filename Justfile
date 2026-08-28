@@ -21,7 +21,7 @@ dev:
 build:
     cd {{frontend}} && npm run build
 
-# Start production server (run `just build` first)
+# Serve the static export (run `just build` first)
 start:
     cd {{frontend}} && npm run start
 
@@ -31,10 +31,24 @@ lint:
 
 # Remove Next.js build output
 clean:
-    rm -rf {{frontend}}/.next
+    rm -rf {{frontend}}/.next {{frontend}}/out
 
 # Install deps and build
 setup: install build
+
+# ── Capacitor (iOS / Android) ────────────────────────────────────────────────
+
+# Build static export and copy it into iOS/Android projects
+cap-sync:
+    cd {{frontend}} && npm run cap:sync
+
+# Open the iOS project in Xcode
+cap-ios:
+    cd {{frontend}} && npm run cap:ios
+
+# Open the Android project in Android Studio
+cap-android:
+    cd {{frontend}} && npm run cap:android
 
 # ── Bootstrap (one-time project setup) ───────────────────────────────────────
 

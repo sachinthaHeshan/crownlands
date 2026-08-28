@@ -19,9 +19,14 @@ const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 const LAND_IMAGE = `${basePath}/background/land.png`;
 
 type GameApi = {
-  beginDrag: (item: PlaceableItem, html5?: boolean) => void;
+  beginDrag: (
+    item: PlaceableItem,
+    html5?: boolean,
+    pointerId?: number,
+  ) => void;
   hover: (clientX: number, clientY: number) => void;
   drop: () => void;
+  cancel: () => void;
 };
 
 function fitWorldToScreen(
@@ -51,6 +56,7 @@ export default function PixiGame() {
   const containerRef = useRef<HTMLDivElement>(null);
   const gameRef = useRef<GameApi | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [panelOpen, setPanelOpen] = useState(false);
 
   useEffect(() => {
     let app: import("pixi.js").Application | null = null;
@@ -124,6 +130,9 @@ export default function PixiGame() {
         let dragItem: PlaceableItem | null = null;
         let hoverOrigin: { col: number; row: number } | null = null;
         let html5DragActive = false;
+        let pickPointerId: number | null = null;
+        let pickClientX = Number.NaN;
+        let pickClientY = Number.NaN;
 
         const layout = () => {
           if (!app || !world) {
@@ -309,6 +318,17 @@ export default function PixiGame() {
         }
 
         function onPointerMove(event: PointerEvent) {
+          if (pickPointerId !== null && event.pointerId === pickPointerId) {
+            if (!Number.isFinite(pickClientX)) {
+              pickClientX = event.clientX;
+              pickClientY = event.clientY;
+            }
+            const dx = event.clientX - pickClientX;
+            const dy = event.clientY - pickClientY;
+            if (Math.hypot(dx, dy) > 24) {
+              pickPointerId = null;
+            }
+          }
           updateHover(event.clientX, event.clientY);
         }
 
@@ -324,6 +344,7 @@ export default function PixiGame() {
         function endDrag() {
           dragItem = null;
           html5DragActive = false;
+          pickPointerId = null;
           hideGhost();
           setDraggingId(null);
           window.removeEventListener("pointermove", onPointerMove);
@@ -342,8 +363,19 @@ export default function PixiGame() {
           endDrag();
         }
 
-        function onPointerUp() {
+        function onPointerUp(event: PointerEvent) {
           if (html5DragActive) {
+            return;
+          }
+          if (pickPointerId !== null && event.pointerId === pickPointerId) {
+            pickPointerId = null;
+            return;
+          }
+          const canvas = app?.canvas;
+          if (
+            !canvas ||
+            (event.target !== canvas && !canvas.contains(event.target as Node))
+          ) {
             return;
           }
           commitDrop();
@@ -359,7 +391,11 @@ export default function PixiGame() {
           endDrag();
         }
 
-        function beginDrag(item: PlaceableItem, html5 = false) {
+        function beginDrag(
+          item: PlaceableItem,
+          html5 = false,
+          pointerId?: number,
+        ) {
           if (!dragItem) {
             setDraggingId(item.id);
             window.addEventListener("pointermove", onPointerMove);
@@ -371,6 +407,11 @@ export default function PixiGame() {
           dragItem = item;
           if (html5) {
             html5DragActive = true;
+            pickPointerId = null;
+          } else if (pointerId !== undefined) {
+            pickPointerId = pointerId;
+            pickClientX = Number.NaN;
+            pickClientY = Number.NaN;
           }
         }
 
@@ -383,6 +424,7 @@ export default function PixiGame() {
             updateHover(clientX, clientY);
           },
           drop: commitDrop,
+          cancel: endDrag,
         };
       } catch (error) {
         console.error("PixiGame failed to start", error);
@@ -400,10 +442,10 @@ export default function PixiGame() {
   }, []);
 
   return (
-    <div className="flex h-full w-full">
+    <div className="relative h-full w-full overflow-hidden">
       <div
         ref={containerRef}
-        className="h-full min-w-0 flex-1"
+        className="absolute inset-0 h-full w-full touch-none"
         aria-label="Game canvas"
         onDragOver={(event) => {
           event.preventDefault();
@@ -415,12 +457,75 @@ export default function PixiGame() {
           gameRef.current?.drop();
         }}
       />
+
+      {draggingId ? (
+        <div
+          className="pointer-events-none absolute left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full border border-white/15 bg-zinc-950/80 px-3 py-1.5 text-xs text-zinc-200 shadow-lg backdrop-blur-sm"
+          style={{ top: "max(0.75rem, env(safe-area-inset-top))" }}
+        >
+          <span>Tap the land to place</span>
+          <button
+            type="button"
+            className="pointer-events-auto rounded-full bg-white/10 px-2 py-0.5 text-zinc-100 hover:bg-white/20"
+            onClick={() => gameRef.current?.cancel()}
+          >
+            Cancel
+          </button>
+        </div>
+      ) : null}
+
+      {!panelOpen && !draggingId ? (
+        <button
+          type="button"
+          onClick={() => setPanelOpen(true)}
+          className="absolute z-20 flex items-center gap-2 rounded-full border border-white/15 bg-zinc-950/85 px-4 py-2.5 text-sm font-medium text-zinc-100 shadow-lg backdrop-blur-sm hover:border-emerald-400/40 hover:bg-zinc-900"
+          style={{
+            bottom: "max(1rem, env(safe-area-inset-bottom))",
+            right: "max(1rem, env(safe-area-inset-right))",
+          }}
+        >
+          <BuildIcon />
+          Build
+        </button>
+      ) : null}
+
       <ItemPanel
+        open={panelOpen}
         draggingId={draggingId}
-        onPickItem={(item, html5) => {
-          gameRef.current?.beginDrag(item, html5);
+        onClose={() => setPanelOpen(false)}
+        onPickItem={(item, html5, pointerId) => {
+          setPanelOpen(false);
+          gameRef.current?.beginDrag(item, html5, pointerId);
         }}
       />
+
+      <div
+        aria-hidden
+        className="pointer-coarse:portrait:flex pointer-events-none pointer-coarse:portrait:pointer-events-auto fixed inset-0 z-50 hidden flex-col items-center justify-center gap-3 bg-zinc-950 px-8 text-center"
+      >
+        <p className="text-sm font-medium text-zinc-100">
+          Rotate your device
+        </p>
+        <p className="text-xs text-zinc-400">
+          Crownlands plays in landscape
+        </p>
+      </div>
     </div>
+  );
+}
+
+function BuildIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="h-4 w-4"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      aria-hidden
+    >
+      <path d="M4 20V9l8-5 8 5v11" />
+      <path d="M9 20v-6h6v6" />
+    </svg>
   );
 }

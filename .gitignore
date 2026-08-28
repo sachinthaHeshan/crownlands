@@ -38,3 +38,7 @@ node_modules/
 # Local / machine-specific
 *.local
 .justfile.local
+
+# Built packages
+*.apk
+*.aab

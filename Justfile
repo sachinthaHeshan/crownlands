@@ -50,6 +50,13 @@ cap-ios:
 cap-android:
     cd {{frontend}} && npm run cap:android
 
+# Build a sideloadable debug APK (crownlands-debug.apk in the project root)
+cap-apk:
+    cd {{frontend}} && npm run cap:sync
+    cd {{frontend}}/android && JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew assembleDebug
+    cp {{frontend}}/android/app/build/outputs/apk/debug/app-debug.apk crownlands-debug.apk
+    @echo "APK: {{justfile_directory()}}/crownlands-debug.apk"
+
 # ── Bootstrap (one-time project setup) ───────────────────────────────────────
 
 # Create Next.js app in frontend/ (skip if folder already exists)
